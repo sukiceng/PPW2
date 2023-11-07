@@ -2,6 +2,8 @@
 
 use App\Http\Controllers\Auth\LoginRegisterController;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\File;
 
 /*
 |--------------------------------------------------------------------------
@@ -25,4 +27,11 @@ Route::controller(LoginRegisterController::class)->group(function() {
     Route::post('/authenticate', 'authenticate')->name('authenticate');
     Route::get('/dashboard', 'dashboard')->name('dashboard');
     Route::post('/logout', 'logout')->name('logout');
+
+    Route::get('/users', 'index')->name('users');
+    Route::delete('/users/{id}', 'destroy')->name('user.destroy');
+    Route::put('/users/{id}', 'update')->name('user.update');
+    Route::get('/users/{id}', 'edit')->name('user.edit');
+
 });
+Storage::disk('local')->put('file.txt', 'Contents');

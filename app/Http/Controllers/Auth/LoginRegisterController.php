@@ -9,6 +9,9 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 use Intervention\Image\Facades\Image;
+use Illuminate\View\View;
+use Illuminate\Support\Facades\File;
+use App\Http\Requests\UpdateUsersRequest;
 
 
 
@@ -49,117 +52,214 @@ class LoginRegisterController extends Controller
             'photo' => 'image|nullable|max:1999'
         ]);
 
-        //periksa apakah file sudah diupload
-        if ($request->hasFile('photo')) {
-            $image = $request->file('photo');
+    // file upload
 
-            // buat unique file name
-            $filename = 'profile_image_' . time() . '.' . $image->getClientOriginalExtension();
-            // simpan gambar original
-            $image->storeAs('public/profile_images',$filename);
-            // create thumbnail
-            $thumbnail = Image::make($image)->fit(100, 100)->stream();
-            $squareThumbnail = Image::make($image)->fit(200, 200)->stream();
-            // store thumbnail
-            Storage::put('public/profile_images/thumbnail_' . $filename, $thumbnail);
-            Storage::put('public/profile_images/square_' . $filename, $squareThumbnail);
-        }else{
-            $filename = 'noimage.jpg';
-        }
+    $path = null; // Inisialisasi dengan null
+    $pathThumbnail = null; // Inisialisasi dengan null
+    $pathSquare = null; // Inisialisasi dengan null
 
-        $path = 'noimage.jpg';
+    if($request -> hasFile('photo')){
+        $filenameWithExt = $request->file('photo')->getClientOriginalName();
+        $filename = pathinfo($filenameWithExt, PATHINFO_FILENAME);
 
-        if($request->hasFile('picture')){
-            $filenameWithExt = $request->file('photo')->getClientOriginalName();
-            $filename = pathinfo($filenameWithExt, PATHINFO_FILENAME);
-            $extension = $request->file('photo')->getClientOriginalExtension();
-            $filenameSimpan = $filename . '_' . time() . '.' . $extension;
-            $path = $request->file('photo')->storeAs('photo', $filenameSimpan);
-        } else {
-            $filenameSimpan = 'noimage.jpg';
-        }
+        $extension = $request->file('photo')->getClientOriginalExtension();
+        $filenameSimpan = $filename.'_'.time().'.'.$extension;
 
-        User::create([
-            'name' => $request->name,
-            'email' => $request->email,
-            'password' => Hash::make($request->password),
-            'photo' => $path
-        ]);
+        $path = $request->file('photo')->storeAs('photos', $filenameSimpan);
 
-        $credentials = $request->only('email', 'password');
-        Auth::attempt($credentials);
-        $request->session()->regenerate();
-        return redirect()->route('dashboard')
+        // resize ke thumbnail
+        $thumbnail = Image::make($request->file('photo')->getRealPath())->resize(150, 150);
+        $thumbnailSimpan = time() . '_thumbnail_' . $request->file('photo')->getClientOriginalName(); // penamaan
+        $thumbnail->save(public_path() . '/storage/photos/' . $thumbnailSimpan);
+
+        // resize ke square
+        $square = Image::make($request->file('photo')->getRealPath())->resize(200, 200);
+        $squareSimpan = time() . '_square_' . $request->file('photo')->getClientOriginalName(); // penamaan
+        $square->save(public_path() . '/storage/photos/' . $squareSimpan);
+
+        // Simpan path gambar baru ke dalam array data user
+        $pathThumbnail = 'photos/' . $thumbnailSimpan;
+        $pathSquare = 'photos/' . $squareSimpan;
+    } else {
+        // kalo gada file foto
+    }
+
+    User::create([
+        'name' => $request->name,
+        'email' => $request->email,
+        'password' => Hash::make($request->password),
+        'photo' => $path,
+        'thumbnail' => $pathThumbnail,
+        'square' => $pathSquare
+    ]);
+
+    $content = [
+        'subject'   => $request->name,
+        'body'      => $request->email
+        ];
+
+   
+    $credentials = $request->only('email', 'password');
+    Auth::attempt($credentials);
+    $request->session()->regenerate();
+    return redirect()->route('login')
         ->withSuccess('You have successfully registered & logged in!');
-
-    }
-
-    /**
-     * Display a login form.
-     *
-     * @return \Illuminate\Http\Response
-     */
-    public function login()
-    {
-        return view('auth.login');
-    }
-
-    /**
-     * Authenticate the user.
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\Response
-     */
-    public function authenticate(Request $request)
-    {
-        $credentials = $request->validate([
-            'email' => 'required|email',
-            'password' => 'required'
-        ]);
-
-        if(Auth::attempt($credentials))
-        {
-            $request->session()->regenerate();
-            return redirect()->route('dashboard')
-                ->withSuccess('You have successfully logged in!');
-        }
-
-        return back()->withErrors([
-            'email' => 'Your provided credentials do not match in our records.',
-        ])->onlyInput('email');
-
-    } 
-    
-    /**
-     * Display a dashboard to authenticated users.
-     *
-     * @return \Illuminate\Http\Response
-     */
-    public function dashboard()
-    {
-        if(Auth::check())
-        {
-            return view('auth.dashboard');
-        }
-        
-        return redirect()->route('login')
-            ->withErrors([
-            'email' => 'Please login to access the dashboard.',
-        ])->onlyInput('email');
-    } 
-    
-    /**
-     * Log out the user from application.
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\Response
-     */
-    public function logout(Request $request)
-    {
-        Auth::logout();
-        $request->session()->invalidate();
-        $request->session()->regenerateToken();
-        return redirect()->route('login')
-            ->withSuccess('You have logged out successfully!');;
-    }    
 }
+
+/**
+ * Display a login form.
+ *
+ * @return \Illuminate\Http\Response
+ */
+public function login()
+{
+    return view('auth.login');
+}
+
+/**
+ * Authenticate the user.
+ *
+ * @param  \Illuminate\Http\Request  $request
+ * @return \Illuminate\Http\Response
+ */
+public function authenticate(Request $request)
+{
+    $credentials = $request->validate([
+        'email' => 'required|email',
+        'password' => 'required'
+    ]);
+
+    if(Auth::attempt($credentials))
+    {
+        $request->session()->regenerate();
+        return redirect()->route('register')
+            ->withSuccess('You have successfully registered and logged in!');
+    }
+
+    return back()->withErrors([
+        'email' => 'Your provided credentials do not match in our records.',
+    ])->onlyInput('email');
+
+}
+
+/**
+ * Display a dashboard to authenticated users.
+ *
+ * @return \Illuminate\Http\Response
+ */
+
+ //verif ke dashboard harus login
+public function dashboard()
+{
+    if(Auth::check())
+    {
+        return view('auth.dashboard');
+
+    }
+
+    return redirect()->route('login')
+        ->withErrors([
+            'email' => 'Please login to access the dashboard.',
+    ])->onlyInput('email');
+}
+
+/**
+ * Log out the user from application.
+ *
+ * @param  \Illuminate\Http\Request  $request
+ * @return \Illuminate\Http\Response
+ */
+public function logout(Request $request)
+{
+    Auth::logout();
+    $request->session()->invalidate();
+    $request->session()->regenerateToken();
+    return redirect()->route('login')
+        ->withSuccess('You have logged out successfully!');
+}
+// Controller
+
+public function index()
+{
+    $users = User::all(); // Mengambil data dari model Post atau sumber data lainnya
+    return view('users', ['users' => $users]);
+}
+
+    /**
+ * Log out the user from application.
+ *
+ * @param  \Illuminate\Http\Request  $request
+ * @return \Illuminate\Http\Response
+ */
+//hapus data
+public function destroy($user)
+{
+    $user = User::findOrFail($user);
+    $user->delete();
+    return redirect()->route('users')
+        ->withSuccess('Data Deleted Successfully');
+}
+
+public function edit(string $id): View
+{
+    //get post by ID
+    $users = User::findOrFail($id);
+
+    //render view with users
+    return view('edit', compact('users'));
+}
+
+public function update(Request $request, $id)
+{
+    $user = User::findOrFail($id);
+    // Validate form
+
+    // Validate form
+    $request->validate([
+        'name' => 'required',
+        'email' => 'required|email|unique:users,email,' . $id,
+        'image' => 'image|mimes:jpeg,jpg,png|max:2048', // aturan validasi untuk gambar
+]);
+
+// Update user data
+$userData = [
+    'name' => $request->name,
+    'email' => $request->email,
+];
+
+// Update gambar jika ada
+if ($request->hasFile('photo')) {
+    // Hapus gambar lama
+    File::delete(public_path() . 'photos/' . $user->photos);
+
+    // Upload gambar baru ukuran normal
+    $filenameWithExt = $request->file('photo')->getClientOriginalName();
+    $filename = pathinfo($filenameWithExt, PATHINFO_FILENAME);
+    $extension = $request->file('photo')->getClientOriginalExtension();
+    $filenameSimpan = $filename.'_'.time().'.'.$extension;
+    $path = $request->file('photo')->storeAs('photos', $filenameSimpan);
+
+    // resize ke thumbnail
+    $thumbnail = Image::make($request->file('photo')->getRealPath())->resize(150, 150);
+    $thumbnailSimpan = time() . '_thumbnail_' . $request->file('photo')->getClientOriginalName(); // penamaan
+    $thumbnail->save(public_path() . '/storage/photos/' . $thumbnailSimpan);
+
+    // resize ke square
+    $square = Image::make($request->file('photo')->getRealPath())->resize(200, 200);
+    $squareSimpan = time() . '_square_' . $request->file('photo')->getClientOriginalName(); // penamaan
+    $square->save(public_path() . '/storage/photos/' . $squareSimpan);
+
+    // Simpan path gambar baru ke dalam array data user
+    $userData['photo'] = $path;
+    $userData['thumbnail'] = 'photos/' . $thumbnailSimpan;
+    $userData['square'] = 'photos/' . $squareSimpan;
+}
+
+// Lakukan pembaruan data
+$user->update($userData);
+
+    return redirect()->route('users')
+            ->withSuccess('Data Updated Successfully');
+}
+}
+    
